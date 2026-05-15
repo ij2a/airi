@@ -27,6 +27,7 @@ const props = withDefaults(defineProps<{
 
 defineEmits<{
   (e: 'extractColorsFromModel'): void
+  (e: 'testEmotion', expression: string): void
 }>()
 
 const modelSelectorOpen = ref(false)
@@ -93,6 +94,7 @@ async function handleModelPick(selectedModel: DisplayModel | undefined) {
       :palette="palette"
       :runtime-snapshot="runtimeSnapshot"
       @extract-colors-from-model="$emit('extractColorsFromModel')"
+      @test-emotion="$emit('testEmotion', $event)"
     />
     <Godot
       v-if="effectiveRenderer === 'godot'"

@@ -616,6 +616,9 @@ defineExpose({
   canvasElement,
   captureFrame,
   readRenderTargetRegionAtClientPoint,
+  playAnimation: (url: string, fadeSeconds?: number) => {
+    vrmViewerRef.value?.playAnimation(url, fadeSeconds)
+  },
 })
 </script>
 

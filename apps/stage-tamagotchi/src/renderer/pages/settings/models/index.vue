@@ -5,13 +5,17 @@ import type {
   ElectronGodotStageSceneInputPayload,
   ElectronGodotStageStatus,
 } from '../../../../shared/eventa'
+import type { ModelSettingsRuntimeChannelEvent } from '../../../../shared/model-settings-runtime'
 
 import { errorMessageFrom } from '@moeru/std'
 import { useElectronEventaInvoke } from '@proj-airi/electron-vueuse'
+import { animations } from '@proj-airi/stage-ui-three'
 import { ModelSettingsPanel } from '@proj-airi/stage-ui/components/scenarios/settings/model-settings'
+import { Emotion } from '@proj-airi/stage-ui/constants/emotions'
 import { DisplayModelFormat } from '@proj-airi/stage-ui/stores/display-models'
 import { useSettings } from '@proj-airi/stage-ui/stores/settings'
 import { Button, Callout } from '@proj-airi/ui'
+import { useBroadcastChannel } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 
@@ -21,6 +25,7 @@ import {
   electronGodotStageStart,
   electronGodotStageStop,
 } from '../../../../shared/eventa'
+import { modelSettingsRuntimeSnapshotChannelName } from '../../../../shared/model-settings-runtime'
 import { useModelSettingsRuntimeSnapshot } from '../../../composables/model-settings-runtime-snapshot'
 import { assertGodotSceneInputSupportedDisplayModel } from './godot-scene-input'
 
@@ -40,6 +45,24 @@ const godotStageStatus = ref<ElectronGodotStageStatus>({
 })
 const switchingGodotStage = ref(false)
 const { runtimeSnapshot } = useModelSettingsRuntimeSnapshot()
+const { post: postModelSettingsRuntimeChannelEvent } = useBroadcastChannel<ModelSettingsRuntimeChannelEvent, ModelSettingsRuntimeChannelEvent>({ name: modelSettingsRuntimeSnapshotChannelName })
+
+const EMOTION_ANIMATION_URL: Partial<Record<Emotion, string>> = {
+  [Emotion.Happy]: animations.clapping.href,
+  [Emotion.Sad]: animations.sad.href,
+  [Emotion.Angry]: animations.angry.href,
+  [Emotion.Think]: animations.thinking.href,
+  [Emotion.Surprise]: animations.surprised.href,
+  [Emotion.Neutral]: animations.relax.href,
+  [Emotion.Awkward]: animations.blush.href,
+  [Emotion.Curious]: animations.lookAround.href,
+}
+
+function handleTestEmotion(emotion: string) {
+  const animUrl = EMOTION_ANIMATION_URL[emotion as Emotion]
+  if (animUrl)
+    postModelSettingsRuntimeChannelEvent({ type: 'play-animation', url: animUrl })
+}
 
 let latestSceneSyncRequest = 0
 
@@ -217,6 +240,7 @@ onMounted(async () => {
           'overflow-y-scroll',
           'relative',
         ]"
+        @test-emotion="handleTestEmotion"
       >
         <template #actions>
           <Button

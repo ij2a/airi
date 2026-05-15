@@ -8,6 +8,8 @@
 
 import type { VRM } from '@pixiv/three-vrm'
 import type {
+  AnimationAction,
+  AnimationClip,
   Group,
   Material,
   Object3D,
@@ -36,13 +38,13 @@ import { until, useMouse } from '@vueuse/core'
 import {
   AnimationMixer,
   Box3,
+  LoopOnce,
   MathUtils,
   Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
   Plane,
   Raycaster,
-
   SRGBColorSpace,
   Vector2,
   Vector3,
@@ -185,6 +187,8 @@ let stopCameraWatch: WatchStopHandle | undefined
 
 // Animation related ref
 const vrmAnimationMixer = ref<AnimationMixer>()
+const currentIdleClip = ref<AnimationClip>()
+const currentEmotionAction = ref<AnimationAction>()
 const { onBeforeRender, stop, start } = useLoop()
 
 const vrmHooks: readonly VrmHook[] = resolveInternalVrmHooks()
@@ -286,12 +290,13 @@ function getManagedVrmScopeKey() {
 }
 
 function getActiveManagedVrmInstance() {
-  if (!modelSrc.value || !vrm.value || !vrmGroup.value || !vrmAnimationMixer.value || !vrmEmote.value)
+  if (!modelSrc.value || !vrm.value || !vrmGroup.value || !vrmAnimationMixer.value || !vrmEmote.value || !currentIdleClip.value)
     return undefined
 
   return createManagedVrmInstance({
     emote: vrmEmote.value,
     group: vrmGroup.value,
+    idleClip: currentIdleClip.value,
     mixer: vrmAnimationMixer.value,
     vrm: vrm.value,
   })
@@ -302,6 +307,8 @@ function clearActiveManagedVrmRefs() {
   vrmEmote.value = undefined
   vrm.value = undefined
   vrmGroup.value = undefined
+  currentIdleClip.value = undefined
+  currentEmotionAction.value = undefined
 }
 
 function applyManagedVrmInstance(instance: ManagedVrmInstance) {
@@ -309,6 +316,7 @@ function applyManagedVrmInstance(instance: ManagedVrmInstance) {
   vrmGroup.value = instance.group
   vrmAnimationMixer.value = instance.mixer
   vrmEmote.value = instance.emote
+  currentIdleClip.value = instance.idleClip
 }
 
 function destroyManagedVrmInstance(instance?: ManagedVrmInstance) {
@@ -822,6 +830,7 @@ async function loadModel() {
     // play animation
     nextVrmAnimationMixer = new AnimationMixer(_vrm.scene)
     nextVrmAnimationMixer.clipAction(clip).play()
+    currentIdleClip.value = clip
 
     nextVrmEmote = useVRMEmote(_vrm)
 
@@ -900,6 +909,7 @@ async function loadModel() {
     commitManagedVrmInstance(createManagedVrmInstance({
       emote: nextVrmEmote,
       group: _vrmGroup,
+      idleClip: clip,
       mixer: nextVrmAnimationMixer,
       vrm: _vrm,
     }))
@@ -1062,10 +1072,61 @@ if (import.meta.hot) {
   })
 }
 
+async function playAnimation(url: string, fadeSeconds = 0.3) {
+  if (!vrm.value || !vrmAnimationMixer.value || !currentIdleClip.value)
+    return
+
+  const mixer = vrmAnimationMixer.value
+  const idleClip = currentIdleClip.value
+
+  // Cancel ongoing emotion animation before starting a new one
+  if (currentEmotionAction.value) {
+    const stale = currentEmotionAction.value
+    currentEmotionAction.value = undefined
+    const idleAction = mixer.clipAction(idleClip)
+    stale.crossFadeTo(idleAction, fadeSeconds, true)
+    idleAction.play()
+  }
+
+  const animation = await loadVRMAnimation(url)
+  if (!animation)
+    return
+  const clip = await clipFromVRMAnimation(vrm.value, animation)
+  // Guard again after async — vrm may have been unloaded
+  if (!clip || !vrmAnimationMixer.value || !currentIdleClip.value)
+    return
+
+  const newAction = mixer.clipAction(clip)
+  newAction.setLoop(LoopOnce, 1)
+  newAction.clampWhenFinished = false
+  newAction.reset()
+
+  const idleAction = mixer.clipAction(currentIdleClip.value)
+  idleAction.crossFadeTo(newAction, fadeSeconds, true)
+  newAction.play()
+  currentEmotionAction.value = newAction
+
+  const onFinished = (e: { action: AnimationAction }) => {
+    if (e.action !== newAction)
+      return
+    mixer.removeEventListener('finished', onFinished as Parameters<typeof mixer.addEventListener>[1])
+    if (currentEmotionAction.value !== newAction)
+      return
+    currentEmotionAction.value = undefined
+
+    const idleAct = mixer.clipAction(idleClip)
+    idleAct.reset()
+    newAction.crossFadeTo(idleAct, fadeSeconds, true)
+    idleAct.play()
+  }
+  mixer.addEventListener('finished', onFinished as Parameters<typeof mixer.addEventListener>[1])
+}
+
 defineExpose({
   setExpression(expression: string, intensity = 1) {
     vrmEmote.value?.setEmotionWithResetAfter(expression, 3000, intensity)
   },
+  playAnimation,
   // NOTICE: This runtime frame hook is intentionally separate from internal VRM model hooks.
   // External callers use it for live pose/tracking input; internal hooks remain reserved for
   // stage-ui-three's own model/material lifecycle extensions.

@@ -6,3 +6,4 @@ export type ModelSettingsRuntimeChannelEvent
   = | { type: 'request-current' }
     | { type: 'snapshot', snapshot: ModelSettingsRuntimeSnapshot }
     | { type: 'owner-gone', ownerInstanceId: string }
+    | { type: 'play-animation', url: string, fadeSeconds?: number }

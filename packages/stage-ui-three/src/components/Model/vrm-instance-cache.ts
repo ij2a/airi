@@ -1,5 +1,5 @@
 import type { VRM } from '@pixiv/three-vrm'
-import type { AnimationMixer, Group } from 'three'
+import type { AnimationClip, AnimationMixer, Group } from 'three'
 
 import type { useVRMEmote } from '../../composables/vrm/expression'
 
@@ -9,6 +9,8 @@ import { stageThreeTraceVrmCacheEvent } from '../../trace/eventa'
 export interface ManagedVrmInstance {
   emote: ReturnType<typeof useVRMEmote>
   group: Group
+  /** The idle animation clip used for crossfading back after emotion animations. */
+  idleClip: AnimationClip
   mixer: AnimationMixer
   modelSrc: string
   scopeKey: string

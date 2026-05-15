@@ -216,10 +216,17 @@ watch(modelSettingsRuntimeSnapshot, (snapshot) => {
 }, { immediate: true })
 
 watch(modelSettingsRuntimeChannelEvent, (event) => {
-  if (event?.type !== 'request-current')
+  if (!event)
     return
 
-  postModelSettingsRuntimeChannelEvent({ type: 'snapshot', snapshot: modelSettingsRuntimeSnapshot.value })
+  if (event.type === 'request-current') {
+    postModelSettingsRuntimeChannelEvent({ type: 'snapshot', snapshot: modelSettingsRuntimeSnapshot.value })
+    return
+  }
+
+  if (event.type === 'play-animation') {
+    widgetStageRef.value?.playAnimation(event.url, event.fadeSeconds)
+  }
 })
 
 const settingsAudioDeviceStore = useSettingsAudioDevice()

@@ -7,6 +7,7 @@ import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { EMOTION_VRMExpressionName_value } from '../../../../constants/emotions'
 import { Container, PropertyColor, PropertyNumber, PropertyPoint } from '../../../data-pane'
 import { ColorPalette } from '../../../widgets'
 
@@ -18,8 +19,9 @@ const props = withDefaults(defineProps<{
   allowExtractColors: true,
 })
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'extractColorsFromModel'): void
+  (e: 'testEmotion', expression: string): void
 }>()
 
 const { t } = useI18n()
@@ -48,7 +50,12 @@ const {
   skyBoxIntensity,
   renderScale,
 } = storeToRefs(modelStore)
+const emotionEntries = Object.entries(EMOTION_VRMExpressionName_value) as [string, string][]
 const controlsLocked = computed(() => props.runtimeSnapshot.controlsLocked)
+
+function handleEmotionButtonClick(emotion: string) {
+  emit('testEmotion', emotion)
+}
 const canExtractColors = computed(() => props.runtimeSnapshot.canCapturePreview)
 const trackingOptions = computed<{
   value: 'camera' | 'mouse' | 'none'
@@ -226,6 +233,28 @@ const envOptions = computed(() => [
           />
         </div>
       </div>
+    </div>
+  </Container>
+  <Container
+    title="Emotion Test"
+    icon="i-solar:emoji-funny-square-bold-duotone"
+    :class="[
+      'rounded-xl',
+      'bg-white/80  dark:bg-black/75',
+      'backdrop-blur-lg',
+    ]"
+  >
+    <div :class="['grid', 'grid-cols-3', 'gap-1', 'p-2']">
+      <Button
+        v-for="[emotion, expression] in emotionEntries"
+        :key="emotion"
+        size="sm"
+        variant="secondary"
+        :disabled="controlsLocked"
+        @click="handleEmotionButtonClick(emotion)"
+      >
+        {{ expression }}
+      </Button>
     </div>
   </Container>
   <Container

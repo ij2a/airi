@@ -26,7 +26,11 @@ const positionCursor = useMouse()
 const settingsStore = useSettings()
 const modelStore = useModelStore()
 const live2dSceneRef = ref<{ canvasElement: () => HTMLCanvasElement | undefined }>()
-const vrmSceneRef = ref<{ canvasElement: () => HTMLCanvasElement | undefined }>()
+const vrmSceneRef = ref<{
+  canvasElement: () => HTMLCanvasElement | undefined
+  setExpression: (expression: string, intensity?: number) => void
+  playAnimation: (url: string, fadeSeconds?: number) => void
+}>()
 const live2dComponentState = ref<'pending' | 'loading' | 'mounted'>('pending')
 const vrmPreviewStageInstanceId = `model-settings-preview-stage:${Math.random().toString(36).slice(2, 10)}`
 
@@ -126,6 +130,12 @@ watch(runtimeSnapshot, snapshot => emit('runtimeSnapshotChanged', snapshot), { i
 
 defineExpose({
   capturePreviewFrame,
+  setExpression: (expression: string, intensity = 1) => {
+    vrmSceneRef.value?.setExpression(expression, intensity)
+  },
+  playAnimation: (url: string, fadeSeconds?: number) => {
+    vrmSceneRef.value?.playAnimation(url, fadeSeconds)
+  },
 })
 </script>
 

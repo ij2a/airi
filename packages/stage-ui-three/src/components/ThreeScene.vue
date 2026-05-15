@@ -679,6 +679,9 @@ defineExpose({
   setExpression: (expression: string, intensity = 1) => {
     modelRef.value?.setExpression(expression, intensity)
   },
+  playAnimation: (url: string, fadeSeconds?: number) => {
+    modelRef.value?.playAnimation(url, fadeSeconds)
+  },
   // NOTICE: External runtime hooks are intentionally separate from internal VRM model hooks.
   // This public frame hook is reserved for live pose/tracking input and is forwarded to VRMModel
   // without exposing the internal model/material lifecycle hook pipeline.
