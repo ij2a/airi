@@ -376,7 +376,7 @@ elements['panel-2'] = statPanel(
 elements['panel-3'] = statPanel(
   3,
   'Req/s (5m)',
-  '5-minute average inbound HTTP request rate. /health (Railway probe) is excluded at the @hono/otel middleware level so this reflects real user traffic.',
+  '5-minute average inbound HTTP request rate. /livez and /readyz (K8s probes) are excluded at the @hono/otel middleware level so this reflects real user traffic.',
   [query(`sum(rate(http_server_request_duration_seconds_count{${SERVICE_FILTER}, http_request_method!="OPTIONS"}[5m]))`, 'req/s')],
   { unit: 'reqps', steps: [{ color: 'green', value: 0 }, { color: 'yellow', value: 100 }, { color: 'red', value: 500 }], decimals: 2 },
 )

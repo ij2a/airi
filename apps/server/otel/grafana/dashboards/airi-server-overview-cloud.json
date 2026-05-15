@@ -216,7 +216,7 @@
             "transformations": []
           }
         },
-        "description": "5-minute average inbound HTTP request rate. /health (Railway probe) is excluded at the @hono/otel middleware level so this reflects real user traffic.",
+        "description": "5-minute average inbound HTTP request rate. /livez and /readyz (K8s probes) are excluded at the @hono/otel middleware level so this reflects real user traffic.",
         "id": 3,
         "links": [],
         "title": "Req/s (5m)",
