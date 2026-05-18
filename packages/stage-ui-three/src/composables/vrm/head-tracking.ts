@@ -81,7 +81,7 @@ export function useHeadTracking() {
     // ── Map screen coords to target angles ────────────────────────────────
     // Yaw: mouse right (+X) → character turns right → negative Y rotation in
     // Three.js right-hand rule (positive Y rotates CCW from above = turns LEFT).
-    targetYaw = MathUtils.clamp(-screenNormX * MAX_YAW, -MAX_YAW, MAX_YAW)
+    targetYaw = MathUtils.clamp(screenNormX * MAX_YAW, -MAX_YAW, MAX_YAW)
     // Pitch: mouse up (+Y) → character looks up → positive X rotation.
     targetPitch = MathUtils.clamp(screenNormY * MAX_PITCH, -MAX_PITCH, MAX_PITCH)
 
