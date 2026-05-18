@@ -78,6 +78,7 @@ import {
 } from '../../composables/vrm/animation'
 import { loadVrm } from '../../composables/vrm/core'
 import { useVRMEmote } from '../../composables/vrm/expression'
+import { useHeadTracking } from '../../composables/vrm/head-tracking'
 import { resolveInternalVrmHooks } from '../../composables/vrm/internal-hooks'
 import { useVRMLipSync } from '../../composables/vrm/lip-sync'
 import {
@@ -209,6 +210,7 @@ type UpdatableMaterial = Material & {
 // Expressions
 const blink = useBlink()
 const idleEyeSaccades = useIdleEyeSaccades()
+const headTracking = useHeadTracking()
 const vrmEmote = ref<ReturnType<typeof useVRMEmote>>()
 const vrmLipSync = useVRMLipSync(currentAudioSource)
 
@@ -460,6 +462,14 @@ function bindManagedVrmInstanceRenderLoop() {
       if (activeVrm)
         runVrmFrameRuntimeHook(activeVrm, delta)
     })
+    // Head tracking must run after the animation mixer (which writes normalized
+    // bone rotations from the clip) and before humanoid.update() (which maps
+    // normalized bones → raw skeleton).  This ensures tracking stacks on top
+    // of whatever pose the animation is in.
+    const headTrackingMs = measureFrameStep(tracingEnabled, () => {
+      if (activeVrm)
+        headTracking.update(activeVrm, lookAtTarget.value, delta)
+    })
     const humanoidMs = measureFrameStep(tracingEnabled, () => {
       activeVrm?.humanoid.update()
     })
@@ -494,6 +504,7 @@ function bindManagedVrmInstanceRenderLoop() {
         durationMs: performance.now() - traceStart,
         emoteMs,
         expressionMs,
+        headTrackingMs,
         humanoidMs,
         lipSyncMs,
         lookAtMs,

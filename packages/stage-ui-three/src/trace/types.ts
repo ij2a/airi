@@ -40,6 +40,7 @@ export interface VrmUpdateFrameTracePayload extends StageThreeRuntimeTraceBasePa
   durationMs: number
   emoteMs: number
   expressionMs: number
+  headTrackingMs: number
   humanoidMs: number
   lipSyncMs: number
   lookAtMs: number
