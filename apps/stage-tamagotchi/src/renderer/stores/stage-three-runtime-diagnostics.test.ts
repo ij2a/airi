@@ -40,6 +40,7 @@ describe('stage three runtime diagnostics helpers', () => {
       durationMs: 9.5,
       emoteMs: 3,
       expressionMs: 4,
+      headTrackingMs: 0,
       humanoidMs: 5,
       lipSyncMs: 6,
       lookAtMs: 7,
