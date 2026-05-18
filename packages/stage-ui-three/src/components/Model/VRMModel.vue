@@ -189,6 +189,11 @@ let stopCameraWatch: WatchStopHandle | undefined
 const vrmAnimationMixer = ref<AnimationMixer>()
 const currentIdleClip = ref<AnimationClip>()
 const currentEmotionAction = ref<AnimationAction>()
+// NOTICE: Three.js AnimationAction objects cannot be compared via Vue ref
+// because ref() wraps them in a Proxy, breaking === identity checks against
+// the original objects that Three.js holds internally (e.g. in 'finished' events).
+// We use a plain numeric ID instead to track which animation is current.
+let currentAnimationId = 0
 const { onBeforeRender, stop, start } = useLoop()
 
 const vrmHooks: readonly VrmHook[] = resolveInternalVrmHooks()
@@ -309,6 +314,7 @@ function clearActiveManagedVrmRefs() {
   vrmGroup.value = undefined
   currentIdleClip.value = undefined
   currentEmotionAction.value = undefined
+  currentAnimationId++ // invalidate any in-flight playAnimation callbacks
 }
 
 function applyManagedVrmInstance(instance: ManagedVrmInstance) {
@@ -1076,6 +1082,7 @@ async function playAnimation(url: string, fadeSeconds = 0.3) {
   if (!vrm.value || !vrmAnimationMixer.value || !currentIdleClip.value)
     return
 
+  const animationId = ++currentAnimationId
   const mixer = vrmAnimationMixer.value
   const idleClip = currentIdleClip.value
 
@@ -1083,40 +1090,50 @@ async function playAnimation(url: string, fadeSeconds = 0.3) {
   if (currentEmotionAction.value) {
     const stale = currentEmotionAction.value
     currentEmotionAction.value = undefined
-    const idleAction = mixer.clipAction(idleClip)
-    stale.crossFadeTo(idleAction, fadeSeconds, true)
-    idleAction.play()
+    stale.fadeOut(fadeSeconds)
   }
 
   const animation = await loadVRMAnimation(url)
   if (!animation)
     return
   const clip = await clipFromVRMAnimation(vrm.value, animation)
-  // Guard again after async — vrm may have been unloaded
+  // Guard against VRM unload or a newer playAnimation call while loading
   if (!clip || !vrmAnimationMixer.value || !currentIdleClip.value)
     return
+  if (animationId !== currentAnimationId)
+    return
+
+  // Re-anchor the root position track so the animation starts at the model's
+  // current origin, not the .vrma file's baked hip position.
+  reAnchorRootPositionTrack(clip, vrm.value)
 
   const newAction = mixer.clipAction(clip)
   newAction.setLoop(LoopOnce, 1)
-  newAction.clampWhenFinished = false
+  newAction.clampWhenFinished = true
   newAction.reset()
 
-  const idleAction = mixer.clipAction(currentIdleClip.value)
-  idleAction.crossFadeTo(newAction, fadeSeconds, true)
+  const idleAction = mixer.clipAction(idleClip)
+  idleAction.fadeOut(fadeSeconds)
+  newAction.fadeIn(fadeSeconds)
   newAction.play()
   currentEmotionAction.value = newAction
 
-  const onFinished = (e: { action: AnimationAction }) => {
-    if (e.action !== newAction)
+  const onFinished = () => {
+    // NOTICE: Three.js AnimationAction objects compared via Vue ref fail === checks
+    // because ref() wraps values in a Proxy. We use a numeric animationId captured
+    // in the closure instead to identify which animation should trigger the return.
+    if (animationId !== currentAnimationId)
       return
-    mixer.removeEventListener('finished', onFinished as Parameters<typeof mixer.addEventListener>[1])
-    if (currentEmotionAction.value !== newAction)
-      return
+    currentAnimationId++
     currentEmotionAction.value = undefined
+    mixer.removeEventListener('finished', onFinished as Parameters<typeof mixer.addEventListener>[1])
 
     const idleAct = mixer.clipAction(idleClip)
-    idleAct.reset()
-    newAction.crossFadeTo(idleAct, fadeSeconds, true)
+    idleAct.enabled = true
+    idleAct.paused = false
+    idleAct.timeScale = 1
+    newAction.fadeOut(fadeSeconds)
+    idleAct.fadeIn(fadeSeconds)
     idleAct.play()
   }
   mixer.addEventListener('finished', onFinished as Parameters<typeof mixer.addEventListener>[1])

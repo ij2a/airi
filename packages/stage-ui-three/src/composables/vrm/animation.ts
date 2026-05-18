@@ -87,6 +87,37 @@ export function reAnchorRootPositionTrack(clip: AnimationClip, _vrm: VRMCore) {
   })
 }
 
+/**
+ * Zeroes out horizontal (X/Z) root motion on the hips position track so the
+ * animation plays in-place. Call this after reAnchorRootPositionTrack.
+ *
+ * Before: hips drifts across the floor each frame (and accumulates across replays).
+ * After:  hips stays at the anchored X/Z for every frame; Y is kept for
+ *         vertical movement (jumps, crouches, etc.).
+ */
+export function zeroOutHorizontalRootMotion(clip: AnimationClip, _vrm: VRMCore) {
+  const hipNode = _vrm.humanoid?.getNormalizedBoneNode('hips')
+  if (!hipNode)
+    return
+
+  const hipsTrack = clip.tracks.find(track =>
+    track instanceof VectorKeyframeTrack
+    && track.name === `${hipNode.name}.position`,
+  )
+  if (!(hipsTrack instanceof VectorKeyframeTrack))
+    return
+
+  // Capture the anchored rest X/Z from the first frame (set by reAnchorRootPositionTrack).
+  const restX = hipsTrack.values[0]
+  const restZ = hipsTrack.values[2]
+
+  for (let i = 0; i < hipsTrack.values.length; i += 3) {
+    hipsTrack.values[i] = restX // pin X
+    hipsTrack.values[i + 2] = restZ // pin Z
+    // values[i + 1] (Y) is left untouched for vertical motion
+  }
+}
+
 export function useBlink() {
   /**
    * Eye blinking animation
