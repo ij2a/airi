@@ -51,6 +51,7 @@ import {
 } from 'three'
 import {
   computed,
+  inject,
   onMounted,
   onUnmounted,
   ref,
@@ -81,6 +82,7 @@ import { useVRMEmote } from '../../composables/vrm/expression'
 import { useHeadTracking } from '../../composables/vrm/head-tracking'
 import { resolveInternalVrmHooks } from '../../composables/vrm/internal-hooks'
 import { useVRMLipSync } from '../../composables/vrm/lip-sync'
+import { mouseXKey, mouseYKey } from '../../injection-keys'
 import {
   createThreeRendererMemorySnapshot,
   createVrmSceneSummarySnapshot,
@@ -179,7 +181,13 @@ const vrmGroup = shallowRef<Group>()
 const modelLoaded = ref<boolean>(false)
 let loadSequence = 0
 // for eye tracking modes
-const { x: mouseX, y: mouseY } = useMouse()
+// Prefer a globally-injected mouse position (e.g. from Electron's
+// screen.getCursorScreenPoint via useElectronRelativeMouse) so head/eye
+// tracking works even when the cursor is outside the window.
+// Falls back to VueUse's useMouse() when no provider is present (web).
+const { x: rawMouseX, y: rawMouseY } = useMouse()
+const mouseX = inject(mouseXKey, rawMouseX)
+const mouseY = inject(mouseYKey, rawMouseY)
 const raycaster = new Raycaster()
 const mouse = new Vector2()
 const mouseTarget = shallowRef<Vec3>()
@@ -537,6 +545,10 @@ function commitManagedVrmInstance(instance: ManagedVrmInstance) {
   bindManagedVrmInstanceRenderLoop()
   emit('loaded', modelSrc.value!)
   modelLoaded.value = true
+  // NOTICE: dev-only debug handle — lets you inspect the VRM instance from
+  // the browser console via `window.__debugVrm`.  Remove before shipping.
+  if (import.meta.env.DEV)
+    (window as any).__debugVrm = instance.vrm
 }
 
 // clean the previous vrm model loaded
