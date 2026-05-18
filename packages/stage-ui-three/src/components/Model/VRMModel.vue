@@ -466,9 +466,22 @@ function bindManagedVrmInstanceRenderLoop() {
     // bone rotations from the clip) and before humanoid.update() (which maps
     // normalized bones → raw skeleton).  This ensures tracking stacks on top
     // of whatever pose the animation is in.
+    //
+    // We pass normalized screen coordinates ([-1, 1]) directly rather than the
+    // 3D lookAtTarget, mirroring Live2D's focus(x, y) approach.  This avoids
+    // ambiguity about which world direction the VRM model faces and produces
+    // predictable, proportional head angles regardless of scene setup.
+    // Pass (0, 0) in non-mouse modes so the head smoothly returns to center.
     const headTrackingMs = measureFrameStep(tracingEnabled, () => {
-      if (activeVrm)
-        headTracking.update(activeVrm, lookAtTarget.value, delta)
+      if (activeVrm) {
+        const normX = trackingMode.value === 'mouse'
+          ? (mouseX.value / window.innerWidth) * 2 - 1
+          : 0
+        const normY = trackingMode.value === 'mouse'
+          ? 1 - (mouseY.value / window.innerHeight) * 2
+          : 0
+        headTracking.update(activeVrm, normX, normY, delta)
+      }
     })
     const humanoidMs = measureFrameStep(tracingEnabled, () => {
       activeVrm?.humanoid.update()
