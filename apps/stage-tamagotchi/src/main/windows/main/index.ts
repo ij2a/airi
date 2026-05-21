@@ -23,7 +23,7 @@ import { defineInvokeHandler } from '@moeru/eventa'
 import { createContext } from '@moeru/eventa/adapters/electron/main'
 import { initScreenCaptureForWindow } from '@proj-airi/electron-screen-capture/main'
 import { defu } from 'defu'
-import { BrowserWindow, ipcMain, shell } from 'electron'
+import { BrowserWindow, ipcMain, screen, shell } from 'electron'
 import { isLinux, isMacOS } from 'std-env'
 import { array, number, object, optional, string } from 'valibot'
 
@@ -34,6 +34,7 @@ import { onAppBeforeQuit } from '../../libs/bootkit/lifecycle'
 import { baseUrl, getElectronMainDirname, load } from '../../libs/electron/location'
 import { createConfig } from '../../libs/electron/persistence'
 import { transparentWindowConfig } from '../shared'
+import { clampBoundsToWorkArea } from '../shared/display'
 import { setupMainWindowElectronInvokes } from './rpc/index.electron'
 
 const appConfigSchema = object({
@@ -77,12 +78,13 @@ export async function setupMainWindow(params: {
 
   const mainWindowConfig = getConfig().windows?.find(w => w.title === 'AIRI' && w.tag === 'main')
 
+  const defaultWidth = 450.0
+  const defaultHeight = 600.0
+
   const window = new BrowserWindow({
     title: 'AIRI',
-    width: mainWindowConfig?.width ?? 450.0,
-    height: mainWindowConfig?.height ?? 600.0,
-    x: mainWindowConfig?.x,
-    y: mainWindowConfig?.y,
+    width: mainWindowConfig?.width ?? defaultWidth,
+    height: mainWindowConfig?.height ?? defaultHeight,
     show: false,
     icon,
     webPreferences: {
@@ -96,6 +98,22 @@ export async function setupMainWindow(params: {
     type: 'panel',
     ...transparentWindowConfig(),
   })
+
+  if (mainWindowConfig?.x != null && mainWindowConfig?.y != null) {
+    window.setBounds(clampBoundsToWorkArea({
+      x: mainWindowConfig.x,
+      y: mainWindowConfig.y,
+      width: mainWindowConfig.width ?? defaultWidth,
+      height: mainWindowConfig.height ?? defaultHeight,
+    }))
+  }
+  else {
+    const primaryWorkArea = screen.getPrimaryDisplay().workArea
+    window.setPosition(
+      Math.round(primaryWorkArea.x + (primaryWorkArea.width - (mainWindowConfig?.width ?? defaultWidth)) / 2),
+      Math.round(primaryWorkArea.y + (primaryWorkArea.height - (mainWindowConfig?.height ?? defaultHeight)) / 2),
+    )
+  }
 
   if (params.onWindowCreated) {
     params.onWindowCreated(window)

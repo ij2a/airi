@@ -17,7 +17,7 @@ import { defineInvokeHandler } from '@moeru/eventa'
 import { createContext } from '@moeru/eventa/adapters/electron/main'
 import { initScreenCaptureForWindow } from '@proj-airi/electron-screen-capture/main'
 import { defu } from 'defu'
-import { BrowserWindow, ipcMain, shell } from 'electron'
+import { BrowserWindow, ipcMain, screen, shell } from 'electron'
 import { isLinux } from 'std-env'
 import { array, number, object, optional, string } from 'valibot'
 
@@ -26,6 +26,7 @@ import icon from '../../../../resources/icon.png?asset'
 import { electronStartDraggingWindow } from '../../../shared/eventa'
 import { baseUrl, getElectronMainDirname, load, withHashRoute } from '../../libs/electron/location'
 import { createConfig } from '../../libs/electron/persistence'
+import { clampBoundsToWorkArea } from '../shared/display'
 import { setupDashboardWindowElectronInvokes } from './rpc/index.electron'
 
 const appConfigSchema = object({
@@ -63,12 +64,13 @@ export async function setupDashboardWindow(params: {
 
   const windowConfig = getConfig().windows?.find(w => w.title === 'AIRI Dashboard' && w.tag === 'dashboard')
 
+  const defaultWidth = 1200.0
+  const defaultHeight = 600.0
+
   const window = new BrowserWindow({
     title: 'AIRI Dashboard',
-    width: windowConfig?.width ?? 1200.0,
-    height: windowConfig?.height ?? 600.0,
-    x: windowConfig?.x,
-    y: windowConfig?.y,
+    width: windowConfig?.width ?? defaultWidth,
+    height: windowConfig?.height ?? defaultHeight,
     show: false,
     icon,
     webPreferences: {
@@ -76,6 +78,22 @@ export async function setupDashboardWindow(params: {
       sandbox: false,
     },
   })
+
+  if (windowConfig?.x != null && windowConfig?.y != null) {
+    window.setBounds(clampBoundsToWorkArea({
+      x: windowConfig.x,
+      y: windowConfig.y,
+      width: windowConfig.width ?? defaultWidth,
+      height: windowConfig.height ?? defaultHeight,
+    }))
+  }
+  else {
+    const primaryWorkArea = screen.getPrimaryDisplay().workArea
+    window.setPosition(
+      Math.round(primaryWorkArea.x + (primaryWorkArea.width - (windowConfig?.width ?? defaultWidth)) / 2),
+      Math.round(primaryWorkArea.y + (primaryWorkArea.height - (windowConfig?.height ?? defaultHeight)) / 2),
+    )
+  }
 
   if (params.onWindowCreated) {
     params.onWindowCreated(window)

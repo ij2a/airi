@@ -2,6 +2,21 @@ import type { BrowserWindow, Rectangle } from 'electron'
 
 import { screen } from 'electron'
 
+/**
+ * Clamp `bounds` so the window stays fully within the workArea of whichever
+ * display it is closest to. Prevents windows from ending up behind the taskbar,
+ * off-screen after a display configuration change, or in negative coordinates.
+ */
+export function clampBoundsToWorkArea(bounds: Rectangle): Rectangle {
+  const work = screen.getDisplayMatching(bounds).workArea
+  return {
+    x: Math.min(Math.max(bounds.x, work.x), work.x + work.width - bounds.width),
+    y: Math.min(Math.max(bounds.y, work.y), work.y + work.height - bounds.height),
+    width: Math.min(bounds.width, work.width),
+    height: Math.min(bounds.height, work.height),
+  }
+}
+
 export function currentDisplayBounds(window: BrowserWindow) {
   const bounds = window.getBounds()
   const nearbyDisplay = screen.getDisplayMatching(bounds)
