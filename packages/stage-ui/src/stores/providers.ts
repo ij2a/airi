@@ -229,6 +229,12 @@ function getWhisperProvider(): LoadableTranscriptionProvider<any, string, any> {
         new URL('../workers/whisper/worker.ts', import.meta.url),
         { type: 'module' },
       ),
+      // NOTICE: A dummy baseURL is required because @xsai/shared's requestURL()
+      // calls baseURL.toString() unconditionally before the custom fetch override
+      // can intercept the request. The actual network call never happens — the
+      // provider's fetch function processes audio entirely in the Web Worker.
+      // See: node_modules/@xsai/shared/dist/index.js requestURL()
+      baseURL: 'http://whisper-local/v1/',
     })
   }
   return whisperProvider
@@ -2550,6 +2556,8 @@ export const useProvidersStore = defineStore('providers', () => {
       }
 
       const loop = useIntervalFn(() => {
+        if (!addedProviders.value[providerId])
+          return
         void validateProvider(providerId, { force: true })
       }, intervalMs, { immediate: false, immediateCallback: false })
       loop.resume()
@@ -2557,11 +2565,10 @@ export const useProvidersStore = defineStore('providers', () => {
     }
   }
 
-  // Update configuration status for all configured providers
+  // Update configuration status for added providers only
   async function updateConfigurationStatus() {
     await Promise.all(Object.entries(providerMetadata)
-      // TODO: ignore un-configured provider
-      // .filter(([_, provider]) => provider.configured)
+      .filter(([providerId]) => !!addedProviders.value[providerId])
       .map(async ([providerId]) => {
         try {
           if (providerRuntimeState.value[providerId]) {
