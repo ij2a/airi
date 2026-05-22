@@ -932,25 +932,25 @@ pages:
         title: 브라우저 (로컬)
         description: https://github.com/moeru-ai/xsai-transformers
         buttons:
-          load: Load Model
-          loading: Loading...
+          load: 모델 불러오기
+          loading: 불러오는 중...
         fields:
           field:
             model:
-              label: Model Selection
-              description: Smaller models load faster. First run downloads the model (~39-809 MB depending on choice).
+              label: 모델 선택
+              description: 작은 모델일수록 빠르게 로드됩니다. 첫 실행 시 모델을 다운로드합니다 (39~809 MB).
             language:
-              label: Language
-              description: Select the spoken language. "Auto-detect" lets Whisper guess, but picking the exact language gives better accuracy.
+              label: 인식 언어
+              description: 말할 언어를 선택하세요. "자동 감지"는 Whisper가 언어를 추측하지만, 언어를 직접 지정하면 더 정확하게 인식합니다.
         models:
           whisper-tiny:
-            description: Fastest, lowest accuracy (~39 MB)
+            description: 가장 빠름, 낮은 정확도 (~39 MB)
           whisper-base:
-            description: Fast, decent accuracy (~74 MB)
+            description: 빠름, 적당한 정확도 (~74 MB)
           whisper-small:
-            description: Balanced speed and accuracy (~244 MB)
+            description: 속도와 정확도의 균형 (~244 MB)
           whisper-large-v3-turbo:
-            description: Best accuracy, slowest (~809 MB)
+            description: 가장 높은 정확도, 가장 느림 (~809 MB)
       browser-local-audio-speech:
         title: 브라우저 (로컬)
         description: https://github.com/moeru-ai/xsai-transformers
@@ -1149,6 +1149,15 @@ pages:
           validation:
             error-missing-api-key: 음성을 테스트하려면 API 키를 입력하세요.
         title: ElevenLabs
+      supertonic-local:
+        description: supertone.ai — 한국어를 포함한 31개 언어 지원
+        fields:
+          info:
+            label: 다국어 TTS
+            description: Supertonic 3은 한국어, 일본어, 영어 등 31개 언어를 지원합니다. 입력 텍스트에서 언어가 자동으로 감지됩니다.
+        playground:
+          default-text: 안녕하세요! 수퍼토닉 TTS를 테스트합니다.
+        title: Supertonic 3 (로컬)
       kokoro-local:
         description: Kokoro-82M을 사용하여 로컬 텍스트 음성 변환을 생성합니다.
         fields:

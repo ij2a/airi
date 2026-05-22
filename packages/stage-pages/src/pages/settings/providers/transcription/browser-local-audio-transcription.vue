@@ -8,7 +8,8 @@ import {
 } from '@proj-airi/stage-ui/components'
 import { useHearingStore } from '@proj-airi/stage-ui/stores/modules/hearing'
 import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
-import { DEFAULT_WHISPER_MODEL } from '@proj-airi/stage-ui/workers/whisper/constants'
+import { DEFAULT_WHISPER_MODEL, WHISPER_LANGUAGE_OPTIONS } from '@proj-airi/stage-ui/workers/whisper/constants'
+import { convertToWhisperWav } from '@proj-airi/stage-ui/workers/whisper/utils'
 import { Callout, ComboboxSelect } from '@proj-airi/ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -31,26 +32,6 @@ const language = computed({
   get: () => (providerConfig.value?.language as string | undefined) || 'auto',
   set: (val) => { providerConfig.value.language = val },
 })
-
-// Whisper supports 99 languages; listing the most common ones here.
-// ISO 639-1 codes used by HuggingFace transformers.js.
-const LANGUAGE_OPTIONS = [
-  { label: 'Auto-detect', value: 'auto' },
-  { label: '한국어 (Korean)', value: 'ko' },
-  { label: 'English', value: 'en' },
-  { label: '日本語 (Japanese)', value: 'ja' },
-  { label: '中文 (Chinese)', value: 'zh' },
-  { label: 'Español (Spanish)', value: 'es' },
-  { label: 'Français (French)', value: 'fr' },
-  { label: 'Deutsch (German)', value: 'de' },
-  { label: 'Português (Portuguese)', value: 'pt' },
-  { label: 'Русский (Russian)', value: 'ru' },
-  { label: 'Italiano (Italian)', value: 'it' },
-  { label: 'Nederlands (Dutch)', value: 'nl' },
-  { label: 'Polski (Polish)', value: 'pl' },
-  { label: 'Türkçe (Turkish)', value: 'tr' },
-  { label: 'Tiếng Việt (Vietnamese)', value: 'vi' },
-]
 
 const providerModels = computed(() => providersStore.getModelsForProvider(providerId))
 const modelOptions = computed(() =>
@@ -99,6 +80,9 @@ async function handleGenerateTranscription(file: File) {
   const modelToUse = (providerConfig.value?.model as string | undefined) || DEFAULT_WHISPER_MODEL
   const selectedLanguage = (providerConfig.value?.language as string | undefined) || 'auto'
 
+  // Convert recorded audio to the PCM16 / 16 kHz WAV format the worker expects.
+  const converted = await convertToWhisperWav(file)
+
   // Only pass an explicit language hint when the user chose a specific language.
   // Omitting it lets Whisper auto-detect (which may still favour English internally).
   const providerOptions = selectedLanguage !== 'auto'
@@ -109,7 +93,7 @@ async function handleGenerateTranscription(file: File) {
     providerId,
     provider,
     modelToUse,
-    file,
+    converted,
     'json',
     providerOptions ? { providerOptions } : undefined,
   )
@@ -117,13 +101,39 @@ async function handleGenerateTranscription(file: File) {
 
 onMounted(async () => {
   await providersStore.fetchModelsForProvider(providerId)
+
+  // Seed default model into provider config if nothing is stored yet.
   if (!providerConfig.value?.model) {
     providerConfig.value.model = DEFAULT_WHISPER_MODEL
+  }
+
+  // Mark provider as configured so it surfaces in the hearing module's provider list.
+  // browser-local-audio-transcription needs no credentials — validation always passes —
+  // but the providers store only activates providers that have been explicitly configured.
+  providersStore.forceProviderConfigured(providerId)
+
+  // Visiting this settings page signals intent to use this provider.
+  // Set it as the active transcription provider so the main character screen
+  // immediately routes audio through it without requiring a detour through
+  // the hearing module settings.
+  if (!hearingStore.activeTranscriptionProvider) {
+    hearingStore.activeTranscriptionProvider = providerId
+  }
+
+  // Persist the active model so the hearing module's `configured` check passes.
+  // configured = !!activeTranscriptionModel  → empty string → false → "no provider configured"
+  if (hearingStore.activeTranscriptionProvider === providerId || !hearingStore.activeTranscriptionModel) {
+    hearingStore.activeTranscriptionModel = (providerConfig.value?.model as string | undefined) || DEFAULT_WHISPER_MODEL
   }
 })
 
 watch(model, (newVal) => {
   providerConfig.value.model = newVal
+  // Keep the hearing module's active model in sync when the user changes models
+  // on this settings page so configured stays true without requiring a page reload.
+  if (hearingStore.activeTranscriptionProvider === providerId) {
+    hearingStore.activeTranscriptionModel = newVal
+  }
 })
 
 watch(language, (newVal) => {
@@ -154,7 +164,7 @@ watch(language, (newVal) => {
         </Callout>
         <ComboboxSelect
           v-model="language"
-          :options="LANGUAGE_OPTIONS"
+          :options="WHISPER_LANGUAGE_OPTIONS"
           placeholder="Select a language..."
         />
       </div>

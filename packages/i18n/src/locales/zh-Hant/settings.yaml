@@ -1149,6 +1149,15 @@ pages:
           validation:
             error-missing-api-key: 需要填寫 API Key 才能使用喔！
         title: ElevenLabs (11labs)
+      supertonic-local:
+        description: supertone.ai — 支援包括韓語在內的31種語言
+        fields:
+          info:
+            label: 多語言TTS
+            description: Supertonic 3 支援韓語、日語、英語等31種語言，可從輸入文字中自動偵測語言。
+        playground:
+          default-text: 你好！這是 Supertonic TTS 的測試。
+        title: Supertonic 3（本地）
       kokoro-local:
         description: 基於 Kokoro-82M 的本地文字轉語音。
         fields:

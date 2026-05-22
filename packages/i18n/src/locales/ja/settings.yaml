@@ -1149,6 +1149,15 @@ pages:
           validation:
             error-missing-api-key: 音声をテストするにはAPIキーを入力してください。
         title: ElevenLabs
+      supertonic-local:
+        description: supertone.ai — 韓国語を含む31言語対応
+        fields:
+          info:
+            label: 多言語TTS
+            description: Supertonic 3は韓国語、日本語、英語など31言語に対応しています。入力テキストから言語が自動検出されます。
+        playground:
+          default-text: こんにちは！Supertonic TTSのテストです。
+        title: Supertonic 3 (ローカル)
       kokoro-local:
         description: Kokoro-82Mを使用したローカルテキスト読み上げ機能です。
         fields:

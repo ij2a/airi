@@ -8,6 +8,7 @@ import { useAudioContext } from '@proj-airi/stage-ui/stores/audio'
 import { CONFIDENCE_THRESHOLD_DISABLED, useHearingSpeechInputPipeline, useHearingStore } from '@proj-airi/stage-ui/stores/modules/hearing'
 import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
 import { useSettingsAudioDevice } from '@proj-airi/stage-ui/stores/settings'
+import { WHISPER_LANGUAGE_OPTIONS } from '@proj-airi/stage-ui/workers/whisper/constants'
 import { Button, FieldCheckbox, FieldCombobox, FieldInput, FieldRange } from '@proj-airi/ui'
 import { until } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
@@ -239,6 +240,26 @@ function updateCustomModelName(value: string | undefined) {
   activeCustomModelName.value = modelValue
   activeTranscriptionModel.value = modelValue
 }
+
+// Language setting — only relevant for browser-local-audio-transcription (Whisper).
+// Reads/writes directly to the provider config so it persists and is picked up
+// by transcribeForRecording via the providerOptions forwarding added to hearing.ts.
+const activeTranscriptionLanguage = computed({
+  get: () => {
+    const config = providersStore.getProviderConfig(activeTranscriptionProvider.value)
+    return (config?.language as string | undefined) || 'auto'
+  },
+  set: (val) => {
+    const config = providersStore.getProviderConfig(activeTranscriptionProvider.value)
+    if (config)
+      config.language = val
+  },
+})
+
+// Only expose language selection for providers that use it (Whisper worker).
+const showLanguageSelector = computed(() =>
+  activeTranscriptionProvider.value === 'browser-local-audio-transcription',
+)
 
 // Sync OpenAI Compatible model from provider config
 function syncOpenAICompatibleSettings() {
@@ -662,6 +683,18 @@ onUnmounted(() => {
               />
             </template>
           </div>
+        </div>
+
+        <!-- Language selection — shown for Whisper (browser-local-audio-transcription) -->
+        <div v-if="showLanguageSelector" class="border-t border-neutral-200 pt-4 dark:border-neutral-700">
+          <FieldCombobox
+            v-model="activeTranscriptionLanguage"
+            :label="t('settings.pages.providers.provider.browser-local-audio-transcription.fields.field.language.label')"
+            :description="t('settings.pages.providers.provider.browser-local-audio-transcription.fields.field.language.description')"
+            :options="WHISPER_LANGUAGE_OPTIONS"
+            placeholder="Select a language..."
+            layout="vertical"
+          />
         </div>
 
         <!-- Confidence threshold (only for non-streaming providers) -->

@@ -111,9 +111,17 @@ export const useHearingStore = defineStore('hearing-store', () => {
   const confidenceThreshold = useLocalStorageManualReset<number>('settings/hearing/confidence-threshold', CONFIDENCE_THRESHOLD_DISABLED)
   const verboseJsonNotSupported = ref(false)
 
-  watch(activeTranscriptionProvider, () => {
+  // Watch for provider changes and auto-load models — mirrors speech store's
+  // watch(activeSpeechProvider, loadVoicesForProvider, { immediate: true }) pattern.
+  // With { immediate: true }, this fires on app startup so the Whisper model starts
+  // loading as soon as the active provider is restored from localStorage, eliminating
+  // the silent-failure window where transcribeForRecording() runs before the worker is ready.
+  watch(activeTranscriptionProvider, async (newProvider) => {
     verboseJsonNotSupported.value = false
-  })
+    if (newProvider) {
+      await loadModelsForProvider(newProvider)
+    }
+  }, { immediate: true })
 
   // Computed properties
   const availableProvidersMetadata = computed(() => allAudioTranscriptionProvidersMetadata.value)
@@ -840,11 +848,31 @@ export const useHearingSpeechInputPipeline = defineStore('modules:hearing:speech
 
         // Get model from configuration or use default
         const model = activeTranscriptionModel.value
+
+        // Allow the provider to pre-process the raw recording (e.g. resample /
+        // reformat audio) before it reaches the transcription worker.
+        const metadata = providersStore.getProviderMetadata(providerId)
+        let audioFile: File = new File([recording], 'recording.wav')
+        if (metadata?.capabilities?.preprocessAudio) {
+          audioFile = await metadata.capabilities.preprocessAudio(audioFile)
+        }
+
+        // Forward the provider's configured language so the worker transcribes in
+        // the correct language instead of defaulting to English.
+        // 'auto' is passed through as-is; the worker treats it as "auto-detect".
+        const providerConfig = providersStore.getProviderConfig(providerId)
+        const configuredLanguage = providerConfig?.language as string | undefined
+        const transcriptionOptions = configuredLanguage
+          ? { providerOptions: { language: configuredLanguage } }
+          : undefined
+
         const result = await hearingStore.transcription(
           providerId,
           provider,
           model,
-          new File([recording], 'recording.wav'),
+          audioFile,
+          undefined,
+          transcriptionOptions,
         )
         const text = result.mode === 'stream' ? await result.text : result.text
         if (!text || !text.trim()) {

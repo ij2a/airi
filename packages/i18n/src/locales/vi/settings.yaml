@@ -1149,6 +1149,15 @@ pages:
           validation:
             error-missing-api-key: Vui lòng nhập khóa API để thử giọng.
         title: ElevenLabs
+      supertonic-local:
+        description: supertone.ai — 31 ngôn ngữ bao gồm tiếng Hàn
+        fields:
+          info:
+            label: TTS đa ngôn ngữ
+            description: Supertonic 3 hỗ trợ 31 ngôn ngữ bao gồm tiếng Hàn, Nhật, Anh. Ngôn ngữ được tự động nhận diện từ văn bản.
+        playground:
+          default-text: Xin chào! Đây là bài kiểm tra Supertonic TTS.
+        title: Supertonic 3 (Cục bộ)
       kokoro-local:
         description: Chuyển văn bản thành giọng nói cục bộ dùng Kokoro-82M.
         fields:

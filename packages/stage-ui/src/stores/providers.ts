@@ -22,6 +22,7 @@ import type {
 import type { ProviderOnboardingField } from '../libs/providers/types'
 import type { AliyunRealtimeSpeechExtraOptions } from './providers/aliyun/stream-transcription'
 
+import { errorMessageFrom } from '@moeru/std'
 import { isStageTamagotchi, isUrl } from '@proj-airi/stage-shared'
 import { getCachedWebGPUCapabilities, isWebGPUSupported } from '@proj-airi/stage-shared/webgpu'
 import { computedAsync, useIntervalFn, useLocalStorage } from '@vueuse/core'
@@ -56,6 +57,7 @@ import { getProviderValidationIntervalMs, listProviders as listDefinedProviders,
 import { getDefaultKokoroModel, KOKORO_MODELS, kokoroModelsToModelInfo } from '../workers/kokoro/constants'
 import { SUPERTONIC_VOICES } from '../workers/supertonic/constants'
 import { DEFAULT_WHISPER_MODEL, WHISPER_MODELS, whisperModelsToModelInfo } from '../workers/whisper/constants'
+import { convertToWhisperWav } from '../workers/whisper/utils'
 import { useAuthStore } from './auth'
 import { createAliyunNLSProvider as createAliyunNlsStreamProvider } from './providers/aliyun/stream-transcription'
 import { convertProviderDefinitionsToMetadata } from './providers/converters'
@@ -144,6 +146,15 @@ export interface ProviderMetadata {
     listModels?: (config: Record<string, unknown>) => Promise<ModelInfo[]>
     listVoices?: (config: Record<string, unknown>) => Promise<VoiceInfo[]>
     loadModel?: (config: Record<string, unknown>, hooks?: { onProgress?: (progress: ProgressInfo) => Promise<void> | void }) => Promise<void>
+    /**
+     * Optional audio pre-processing step for local transcription providers that
+     * require a specific audio encoding (e.g. PCM16 at 16 kHz for Whisper).
+     *
+     * When present, the hearing pipeline calls this before passing recorded audio
+     * to the transcription provider so the conversion is co-located with the
+     * provider definition rather than spread across call sites.
+     */
+    preprocessAudio?: (file: File) => Promise<File>
   }
   validators: {
     /**
@@ -221,6 +232,10 @@ export interface ProviderRuntimeState {
 // Module-level singleton — the provider owns the Worker instance.
 // Follows the same pattern as `getKokoroAdapter` in the kokoro provider.
 let whisperProvider: LoadableTranscriptionProvider<any, string, any> | null = null
+
+// Tracks which model was last successfully loaded so listModels can skip redundant loads.
+// Mirrors the `lastLoadedModelId` closure used in kokoro-local's listVoices.
+let whisperLastLoadedModelId: string | null = null
 
 function getWhisperProvider(): LoadableTranscriptionProvider<any, string, any> {
   if (!whisperProvider) {
@@ -421,6 +436,11 @@ export const useProvidersStore = defineStore('providers', () => {
       description: 'https://github.com/moeru-ai/xsai-transformers',
       icon: 'i-lobe-icons:huggingface',
       isAvailableBy: isBrowserAndMemoryEnough,
+      // No API key or external credentials needed — the provider runs entirely in the
+      // browser via a Web Worker. Without this flag getProviderInstance() throws
+      // "Provider credentials for ... not found" when the provider hasn't been
+      // explicitly configured yet (e.g. first launch or direct navigation to main screen).
+      requiresCredentials: false,
       pricing: 'free',
       deployment: 'local',
 
@@ -433,7 +453,29 @@ export const useProvidersStore = defineStore('providers', () => {
       },
 
       capabilities: {
-        listModels: async _config => whisperModelsToModelInfo(),
+        // Auto-load the Whisper model when the hearing store queries available models.
+        // The hearing store calls loadModelsForProvider on mount and on provider change
+        // (immediate watch), making listModels the natural lazy-init entry point —
+        // mirrors the pattern used by kokoro-local and supertonic-local in listVoices.
+        listModels: async (config) => {
+          try {
+            const modelId = (config.model as string | undefined) || DEFAULT_WHISPER_MODEL
+            if (modelId !== whisperLastLoadedModelId) {
+              await getWhisperProvider().loadTranscribe(modelId, {
+                // NOTICE: The worker auto-detects WebGPU via gpuu; passing 'webgpu' here
+                // lets transformers.js respect that, and it falls back to wasm automatically
+                // when WebGPU is unavailable.
+                device: 'webgpu' as any,
+              })
+              whisperLastLoadedModelId = modelId
+            }
+          }
+          catch (error) {
+            console.error('[browser-local-audio-transcription] Failed to auto-load model in listModels:', error)
+            // Return models anyway — the settings page loadModel() button will retry with progress UI
+          }
+          return whisperModelsToModelInfo()
+        },
 
         loadModel: async (config, hooks) => {
           const modelId = (config.model as string | undefined) || DEFAULT_WHISPER_MODEL
@@ -445,7 +487,14 @@ export const useProvidersStore = defineStore('providers', () => {
             device: 'webgpu' as any,
             onProgress: hooks?.onProgress,
           })
+          // Keep the last-loaded tracker in sync so listModels skips the reload
+          // after the user explicitly loads a new model from the settings page.
+          whisperLastLoadedModelId = modelId
         },
+
+        // Convert browser-recorded audio (Float32 PCM / ~48 kHz) to PCM16 / 16 kHz
+        // before the file reaches the Whisper worker which only understands Int16 at 16 kHz.
+        preprocessAudio: convertToWhisperWav,
       },
 
       validators: {
@@ -2310,7 +2359,7 @@ export const useProvidersStore = defineStore('providers', () => {
       }),
 
       createProvider: async (_config) => {
-        const adapterPromise = getSupertonicAdapter()
+        const adapterReadyPromise = getSupertonicAdapter()
 
         const provider: SpeechProvider = {
           speech: () => {
@@ -2330,7 +2379,7 @@ export const useProvidersStore = defineStore('providers', () => {
                     throw new Error('Voice parameter is required')
                   }
 
-                  const buffer = await (await adapterPromise).generate(text, voiceId)
+                  const buffer = await (await adapterReadyPromise).generate(text, voiceId)
 
                   return new Response(buffer, {
                     status: 200,
@@ -2352,6 +2401,11 @@ export const useProvidersStore = defineStore('providers', () => {
       },
 
       capabilities: {
+        /** Supertonic 3 has exactly one ONNX model — always return it so the module speech settings page can display and auto-select it. */
+        listModels: async (_config: Record<string, unknown>) => {
+          return [{ id: 'supertonic-3', name: 'Supertonic 3', provider: 'supertonic-local', description: 'onnx-community/Supertonic-TTS-2-ONNX — multilingual (en, ko, es, pt, fr)' }]
+        },
+
         loadModel: async (_config: Record<string, unknown>, _hooks?: { onProgress?: (progress: ProgressInfo) => Promise<void> | void }) => {
           try {
             const caps = getCachedWebGPUCapabilities()
@@ -2379,6 +2433,23 @@ export const useProvidersStore = defineStore('providers', () => {
         },
 
         listVoices: async (_config: Record<string, unknown>) => {
+          try {
+            const adapter = await getSupertonicAdapter()
+
+            // Auto-load the ONNX model if not ready — mirrors the pattern used by
+            // kokoro-local's listVoices. The speech store calls loadVoicesForProvider
+            // on mount and on provider change (immediate watch), so this is the natural
+            // entry point for lazy model initialisation without touching Stage.vue.
+            if (adapter.state === 'idle') {
+              const caps = getCachedWebGPUCapabilities()
+              await adapter.loadModel(caps?.supported ? 'webgpu' : 'wasm')
+            }
+          }
+          catch (error) {
+            console.error('Failed to auto-load Supertonic model in listVoices:', error)
+            // Return voices anyway — model may already be loading or will retry later
+          }
+
           return SUPERTONIC_VOICES.map(voice => ({
             id: voice.id,
             name: voice.name,
@@ -2690,7 +2761,7 @@ export const useProvidersStore = defineStore('providers', () => {
     catch (error) {
       console.error(`Error fetching models for ${providerId}:`, error)
       if (runtimeState) {
-        runtimeState.modelLoadError = error instanceof Error ? error.message : 'Unknown error'
+        runtimeState.modelLoadError = errorMessageFrom(error) ?? 'Unknown error'
       }
       return []
     }

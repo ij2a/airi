@@ -1149,6 +1149,15 @@ pages:
           validation:
             error-missing-api-key: Por favor ingresa una clave API para probar la voz.
         title: ElevenLabs
+      supertonic-local:
+        description: supertone.ai — 31 idiomas incluyendo coreano
+        fields:
+          info:
+            label: TTS multilingüe
+            description: Supertonic 3 admite 31 idiomas incluyendo coreano, japonés e inglés. El idioma se detecta automáticamente.
+        playground:
+          default-text: '¡Hola! Esta es una prueba de Supertonic TTS.'
+        title: Supertonic 3 (Local)
       kokoro-local:
         description: Texto local de voz usando Kokoro-82M.
         fields:

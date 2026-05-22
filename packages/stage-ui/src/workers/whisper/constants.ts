@@ -47,6 +47,39 @@ export const WHISPER_MODELS: WhisperModel[] = [
 /** Default model used when no model is configured. */
 export const DEFAULT_WHISPER_MODEL = WHISPER_MODELS[0].id
 
+/** Selectable languages for Whisper transcription. */
+export interface WhisperLanguageOption {
+  /** Display label shown in the UI */
+  label: string
+  /** ISO 639-1 language code, or `'auto'` for auto-detection */
+  value: string
+}
+
+/**
+ * Language options for Whisper transcription, ordered by common usage.
+ * `'auto'` lets Whisper run its built-in language detection token.
+ */
+export const WHISPER_LANGUAGE_OPTIONS: WhisperLanguageOption[] = [
+  { label: 'Auto-detect', value: 'auto' },
+  { label: '한국어 (Korean)', value: 'ko' },
+  { label: 'English', value: 'en' },
+  { label: '日本語 (Japanese)', value: 'ja' },
+  { label: '中文 (Chinese)', value: 'zh' },
+  { label: 'Español (Spanish)', value: 'es' },
+  { label: 'Français (French)', value: 'fr' },
+  { label: 'Deutsch (German)', value: 'de' },
+  { label: 'Português (Portuguese)', value: 'pt' },
+  { label: 'Русский (Russian)', value: 'ru' },
+  { label: 'Italiano (Italian)', value: 'it' },
+  { label: 'Nederlands (Dutch)', value: 'nl' },
+  { label: 'Polski (Polish)', value: 'pl' },
+  { label: 'Türkçe (Turkish)', value: 'tr' },
+  { label: 'Tiếng Việt (Vietnamese)', value: 'vi' },
+]
+
+/** Default language — auto-detect. */
+export const DEFAULT_WHISPER_LANGUAGE = 'auto'
+
 /**
  * Convert WHISPER_MODELS to the shared ModelInfo shape expected by the
  * providers store's `capabilities.listModels` return type.
