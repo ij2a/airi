@@ -9,6 +9,7 @@ import type {
   TranscriptionProviderWithExtraOptions,
 } from '@xsai-ext/providers/utils'
 import type { ProgressInfo } from '@xsai-transformers/shared/types'
+import type { LoadableTranscriptionProvider } from '@xsai-transformers/transcription'
 import type {
   UnAlibabaCloudOptions,
   UnDeepgramOptions,
@@ -34,6 +35,7 @@ import {
   createTranscriptionProvider,
   merge,
 } from '@xsai-ext/providers/utils'
+import { createTranscriptionProvider as createWhisperTranscriptionProvider } from '@xsai-transformers/transcription'
 import { listModels } from '@xsai/model'
 import { uniqBy } from 'es-toolkit'
 import { defineStore } from 'pinia'
@@ -49,8 +51,11 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { getKokoroAdapter } from '../libs/inference/adapters/kokoro'
+import { getSupertonicAdapter } from '../libs/inference/adapters/supertonic'
 import { getProviderValidationIntervalMs, listProviders as listDefinedProviders, ProviderValidationCheck } from '../libs/providers'
 import { getDefaultKokoroModel, KOKORO_MODELS, kokoroModelsToModelInfo } from '../workers/kokoro/constants'
+import { SUPERTONIC_VOICES } from '../workers/supertonic/constants'
+import { DEFAULT_WHISPER_MODEL, WHISPER_MODELS, whisperModelsToModelInfo } from '../workers/whisper/constants'
 import { useAuthStore } from './auth'
 import { createAliyunNLSProvider as createAliyunNlsStreamProvider } from './providers/aliyun/stream-transcription'
 import { convertProviderDefinitionsToMetadata } from './providers/converters'
@@ -213,6 +218,22 @@ export interface ProviderRuntimeState {
   modelLoadError: string | null
 }
 
+// Module-level singleton — the provider owns the Worker instance.
+// Follows the same pattern as `getKokoroAdapter` in the kokoro provider.
+let whisperProvider: LoadableTranscriptionProvider<any, string, any> | null = null
+
+function getWhisperProvider(): LoadableTranscriptionProvider<any, string, any> {
+  if (!whisperProvider) {
+    whisperProvider = createWhisperTranscriptionProvider({
+      worker: new Worker(
+        new URL('../workers/whisper/worker.ts', import.meta.url),
+        { type: 'module' },
+      ),
+    })
+  }
+  return whisperProvider
+}
+
 export const useProvidersStore = defineStore('providers', () => {
   const providerCredentials = useLocalStorage<Record<string, Record<string, unknown>>>('settings/credentials/providers', {})
   const addedProviders = useLocalStorage<Record<string, boolean>>('settings/providers/added', {})
@@ -243,9 +264,6 @@ export const useProvidersStore = defineStore('providers', () => {
   })
 
   async function isBrowserAndMemoryEnough() {
-    if (isStageTamagotchi())
-      return false
-
     const webGPUAvailable = await isWebGPUSupported()
     if (webGPUAvailable) {
       return true
@@ -387,37 +405,71 @@ export const useProvidersStore = defineStore('providers', () => {
         },
       },
     }),
-    'browser-local-audio-transcription': buildOpenAICompatibleProvider({
+    'browser-local-audio-transcription': {
       id: 'browser-local-audio-transcription',
-      name: 'Browser (Local)',
-      nameKey: 'settings.pages.providers.provider.browser-local-audio-transcription.title',
-      descriptionKey: 'settings.pages.providers.provider.browser-local-audio-transcription.description',
-      icon: 'i-lobe-icons:huggingface',
-      description: 'https://github.com/moeru-ai/xsai-transformers',
       category: 'transcription',
       tasks: ['speech-to-text', 'automatic-speech-recognition', 'asr', 'stt'],
+      nameKey: 'settings.pages.providers.provider.browser-local-audio-transcription.title',
+      name: 'Browser (Local)',
+      descriptionKey: 'settings.pages.providers.provider.browser-local-audio-transcription.description',
+      description: 'https://github.com/moeru-ai/xsai-transformers',
+      icon: 'i-lobe-icons:huggingface',
       isAvailableBy: isBrowserAndMemoryEnough,
-      creator: createOpenAI,
-      validation: [],
+      pricing: 'free',
+      deployment: 'local',
+
+      defaultOptions: () => ({
+        model: DEFAULT_WHISPER_MODEL,
+      }),
+
+      createProvider: async (_config) => {
+        return getWhisperProvider() as any
+      },
+
+      capabilities: {
+        listModels: async _config => whisperModelsToModelInfo(),
+
+        loadModel: async (config, hooks) => {
+          const modelId = (config.model as string | undefined) || DEFAULT_WHISPER_MODEL
+          const provider = getWhisperProvider()
+          await provider.loadTranscribe(modelId, {
+            // NOTICE: The worker auto-detects WebGPU via gpuu; passing 'webgpu' here
+            // lets transformers.js respect that, and it falls back to wasm automatically
+            // when WebGPU is unavailable.
+            device: 'webgpu' as any,
+            onProgress: hooks?.onProgress,
+          })
+        },
+      },
+
       validators: {
         chatPingCheckAvailable: false,
         validateProviderConfig: (config) => {
-          if (!config.baseUrl) {
+          const model = config.model as string | undefined
+          if (!model) {
             return {
-              errors: [new Error('Base URL is required.')],
-              reason: 'Base URL is required. This is likely a bug, report to developers on https://github.com/moeru-ai/airi/issues.',
+              errors: [new Error('Model is required.')],
+              reason: 'Model is required.',
               valid: false,
             }
           }
-
-          return {
-            errors: [],
-            reason: '',
-            valid: true,
+          if (!WHISPER_MODELS.some(m => m.id === model)) {
+            return {
+              errors: [new Error(`Invalid model: ${model}`)],
+              reason: `Invalid model. Must be one of: ${WHISPER_MODELS.map(m => m.id).join(', ')}`,
+              valid: false,
+            }
           }
+          return { errors: [], reason: '', valid: true }
         },
       },
-    }),
+
+      transcriptionFeatures: {
+        supportsGenerate: true,
+        supportsStreamOutput: false,
+        supportsStreamInput: false,
+      },
+    },
     'openai-audio-speech': buildOpenAICompatibleProvider({
       id: 'openai-audio-speech',
       name: 'OpenAI',
@@ -2234,6 +2286,110 @@ export const useProvidersStore = defineStore('providers', () => {
             valid: true,
           }
         },
+      },
+    },
+
+    'supertonic-local': {
+      id: 'supertonic-local',
+      category: 'speech',
+      tasks: ['text-to-speech'],
+      nameKey: 'settings.pages.providers.provider.supertonic-local.title',
+      name: 'Supertonic 3',
+      descriptionKey: 'settings.pages.providers.provider.supertonic-local.description',
+      description: 'supertone.ai',
+      icon: 'i-lobe-icons:speaker',
+
+      defaultOptions: () => ({
+        voiceId: 'F1',
+      }),
+
+      createProvider: async (_config) => {
+        const adapterPromise = getSupertonicAdapter()
+
+        const provider: SpeechProvider = {
+          speech: () => {
+            return {
+              baseURL: 'http://supertonic-local/v1/',
+              model: 'supertonic-3',
+              fetch: async (_input: RequestInfo | URL, init?: RequestInit) => {
+                try {
+                  if (!init?.body || typeof init.body !== 'string') {
+                    throw new Error('Invalid request body')
+                  }
+                  const body = JSON.parse(init.body)
+                  const text = body.input
+                  const voiceId = body.voice
+
+                  if (!voiceId) {
+                    throw new Error('Voice parameter is required')
+                  }
+
+                  const buffer = await (await adapterPromise).generate(text, voiceId)
+
+                  return new Response(buffer, {
+                    status: 200,
+                    headers: {
+                      'Content-Type': 'audio/wav',
+                    },
+                  })
+                }
+                catch (error) {
+                  console.error('Supertonic TTS generation failed:', error)
+                  throw error
+                }
+              },
+            }
+          },
+        }
+
+        return provider
+      },
+
+      capabilities: {
+        loadModel: async (_config: Record<string, unknown>, _hooks?: { onProgress?: (progress: ProgressInfo) => Promise<void> | void }) => {
+          try {
+            const caps = getCachedWebGPUCapabilities()
+            const device = caps?.supported ? 'webgpu' : 'wasm'
+            const adapter = await getSupertonicAdapter()
+            await adapter.loadModel(device, {
+              onProgress: _hooks?.onProgress
+                ? (p) => {
+                    _hooks.onProgress!({
+                      name: p.file ?? '',
+                      file: p.file ?? '',
+                      progress: p.percent >= 0 ? p.percent : 0,
+                      status: 'progress',
+                      loaded: p.loaded ?? 0,
+                      total: p.total ?? 0,
+                    } as ProgressInfo)
+                  }
+                : undefined,
+            })
+          }
+          catch (error) {
+            console.error('Failed to load Supertonic model:', error)
+            throw error
+          }
+        },
+
+        listVoices: async (_config: Record<string, unknown>) => {
+          return SUPERTONIC_VOICES.map(voice => ({
+            id: voice.id,
+            name: voice.name,
+            provider: 'supertonic-local',
+            languages: [{ code: 'mul', title: 'Multilingual (31 languages)' }],
+            gender: voice.gender,
+          }))
+        },
+      },
+
+      validators: {
+        chatPingCheckAvailable: false,
+        validateProviderConfig: async (_config: any) => ({
+          errors: [],
+          reason: '',
+          valid: true,
+        }),
       },
     },
   }

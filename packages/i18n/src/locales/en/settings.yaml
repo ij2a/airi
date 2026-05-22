@@ -976,6 +976,26 @@ pages:
       browser-local-audio-transcription:
         title: Browser (Local)
         description: https://github.com/moeru-ai/xsai-transformers
+        buttons:
+          load: Load Model
+          loading: Loading...
+        fields:
+          field:
+            model:
+              label: Model Selection
+              description: Smaller models load faster. First run downloads the model (~39–809 MB depending on choice).
+            language:
+              label: Language
+              description: Select the spoken language. "Auto-detect" lets Whisper guess, but picking the exact language gives better accuracy.
+        models:
+          whisper-tiny:
+            description: Fastest, lowest accuracy (~39 MB)
+          whisper-base:
+            description: Fast, decent accuracy (~74 MB)
+          whisper-small:
+            description: Balanced speed and accuracy (~244 MB)
+          whisper-large-v3-turbo:
+            description: Best accuracy, slowest (~809 MB)
       browser-local-audio-speech:
         title: Browser (Local)
         description: https://github.com/moeru-ai/xsai-transformers
