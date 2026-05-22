@@ -65,6 +65,9 @@ export const MODEL_VRAM_ESTIMATES: Record<string, number> = {
   'kokoro-q4': 41 * 1024 * 1024,
   'kokoro-q4f16': 41 * 1024 * 1024,
 
+  // Supertonic 3 — 3 ONNX files, ~99M params total
+  [MODEL_NAMES.SUPERTONIC]: 200 * 1024 * 1024, // ~200 MB
+
   // Whisper large v3 turbo — encoder fp16 + decoder q4
   [MODEL_NAMES.WHISPER]: 800 * 1024 * 1024, // ~800 MB
 

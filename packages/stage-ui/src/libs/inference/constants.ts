@@ -12,6 +12,9 @@
 /** HuggingFace model repository identifiers */
 export const MODEL_IDS = {
   KOKORO: 'onnx-community/Kokoro-82M-v1.0-ONNX',
+  // NOTICE: v1 (Supertonic-TTS-ONNX) only supports English.
+  // v2 adds Korean, Spanish, Portuguese, French via language tags: <ko>text</ko>
+  SUPERTONIC: 'onnx-community/Supertonic-TTS-2-ONNX',
   WHISPER: 'onnx-community/whisper-large-v3-turbo',
   BG_REMOVAL: 'Xenova/modnet',
 } as const
@@ -19,6 +22,7 @@ export const MODEL_IDS = {
 /** Short model identifiers used in adapter state tracking and logging */
 export const MODEL_NAMES = {
   KOKORO: 'kokoro-82m',
+  SUPERTONIC: 'supertonic-3',
   WHISPER: 'whisper-large-v3-turbo',
   BG_REMOVAL: 'modnet',
 } as const
@@ -32,6 +36,11 @@ export const TIMEOUTS = {
   KOKORO_LOAD: 120_000,
   /** Kokoro audio generation timeout */
   KOKORO_GENERATE: 120_000,
+
+  /** Supertonic model load timeout (3 ONNX files to download) */
+  SUPERTONIC_LOAD: 180_000,
+  /** Supertonic audio generation timeout */
+  SUPERTONIC_GENERATE: 60_000,
 
   /** Whisper model load timeout (larger model, allow more time) */
   WHISPER_LOAD: 180_000,
