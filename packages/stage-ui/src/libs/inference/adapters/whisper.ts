@@ -6,13 +6,18 @@
  * unified protocol messages to subscribers.
  */
 
+import type { ProgressInfo } from '@xsai-transformers/shared/types'
+import type { LoadableTranscriptionProvider } from '@xsai-transformers/transcription'
+
 import type { AllocationToken } from '../gpu-resource-coordinator'
 import type { ProgressPayload } from '../protocol'
 
 import { defaultPerfTracer } from '@proj-airi/stage-shared'
+import { createTranscriptionProvider } from '@xsai-transformers/transcription'
 import { Mutex } from 'async-mutex'
 
 import { removeInferenceStatus, updateInferenceStatus } from '../../../composables/use-inference-status'
+import { DEFAULT_WHISPER_MODEL } from '../../../workers/whisper/constants'
 import { DEVICE_LOSS_WASM_THRESHOLD, MAX_RESTARTS, MODEL_NAMES, RESTART_DELAY_MS, TIMEOUTS } from '../constants'
 import { getGPUCoordinator, getLoadQueue, MODEL_VRAM_ESTIMATES } from '../coordinator'
 import { LOAD_PRIORITY } from '../load-queue'
@@ -411,4 +416,83 @@ export function createWhisperAdapter(workerUrl: string | URL): WhisperAdapter {
     get manifest() { return lastManifest },
     get deviceLossCount() { return deviceLossCount },
   }
+}
+
+// ---------------------------------------------------------------------------
+// @xsai-transformers singleton
+//
+// The browser-local-audio-transcription provider uses @xsai-transformers/transcription
+// instead of the custom WhisperAdapter above — the library manages the Worker
+// lifecycle internally so we only need to own the singleton and model cache.
+// ---------------------------------------------------------------------------
+
+let xsaiProvider: LoadableTranscriptionProvider<any, string, any> | null = null
+
+// Tracks which model was last successfully loaded so loadWhisperModel can skip
+// redundant worker round-trips when the model hasn't changed between calls.
+let lastLoadedModelId: string | null = null
+
+/**
+ * Get (or lazily create) the @xsai-transformers Whisper provider singleton.
+ *
+ * Use when:
+ * - You need to call `provider.transcribe()` directly from the hearing pipeline.
+ * - Prefer {@link loadWhisperModel} for the load + cache combination.
+ *
+ * Returns:
+ * - The module-level singleton; the Worker is started on first call.
+ */
+export function getWhisperProvider(): LoadableTranscriptionProvider<any, string, any> {
+  if (!xsaiProvider) {
+    xsaiProvider = createTranscriptionProvider({
+      worker: new Worker(
+        new URL('../../../workers/whisper/worker.ts', import.meta.url),
+        { type: 'module' },
+      ),
+      // NOTICE: A dummy baseURL is required because @xsai/shared's requestURL()
+      // calls baseURL.toString() unconditionally before the custom fetch override
+      // can intercept the request. The actual network call never happens — the
+      // provider's fetch function processes audio entirely in the Web Worker.
+      // See: node_modules/@xsai/shared/dist/index.js requestURL()
+      baseURL: 'http://whisper-local/v1/',
+    })
+  }
+  return xsaiProvider
+}
+
+/**
+ * Load a Whisper model into the worker, skipping if already loaded.
+ *
+ * Use when:
+ * - The `listModels` capability triggers lazy init on app startup.
+ * - The user explicitly selects a model from the settings page (`loadModel`).
+ *
+ * Expects:
+ * - `modelId`: a valid WHISPER_MODELS entry id; defaults to DEFAULT_WHISPER_MODEL.
+ * - `options.onProgress`: optional progress callback forwarded to transformers.js.
+ *   When provided, the load always runs (the caller explicitly wants progress events).
+ *
+ * Returns:
+ * - Resolves when the model is ready; rejects if loading fails.
+ */
+export async function loadWhisperModel(
+  modelId: string = DEFAULT_WHISPER_MODEL,
+  options?: {
+    onProgress?: (progress: ProgressInfo) => Promise<void> | void
+  },
+): Promise<void> {
+  if (modelId === lastLoadedModelId && !options?.onProgress) {
+    // Already loaded and no explicit progress hook requested — skip the round-trip.
+    return
+  }
+
+  await getWhisperProvider().loadTranscribe(modelId, {
+    // NOTICE: The worker auto-detects WebGPU via gpuu; passing 'webgpu' here
+    // lets transformers.js respect that, and it falls back to wasm automatically
+    // when WebGPU is unavailable.
+    device: 'webgpu' as any,
+    onProgress: options?.onProgress,
+  })
+
+  lastLoadedModelId = modelId
 }

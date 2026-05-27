@@ -9,7 +9,6 @@ import type {
   TranscriptionProviderWithExtraOptions,
 } from '@xsai-ext/providers/utils'
 import type { ProgressInfo } from '@xsai-transformers/shared/types'
-import type { LoadableTranscriptionProvider } from '@xsai-transformers/transcription'
 import type {
   UnAlibabaCloudOptions,
   UnDeepgramOptions,
@@ -36,7 +35,6 @@ import {
   createTranscriptionProvider,
   merge,
 } from '@xsai-ext/providers/utils'
-import { createTranscriptionProvider as createWhisperTranscriptionProvider } from '@xsai-transformers/transcription'
 import { listModels } from '@xsai/model'
 import { uniqBy } from 'es-toolkit'
 import { defineStore } from 'pinia'
@@ -53,6 +51,7 @@ import { useI18n } from 'vue-i18n'
 
 import { getKokoroAdapter } from '../libs/inference/adapters/kokoro'
 import { getSupertonicAdapter } from '../libs/inference/adapters/supertonic'
+import { getWhisperProvider, loadWhisperModel } from '../libs/inference/adapters/whisper'
 import { getProviderValidationIntervalMs, listProviders as listDefinedProviders, ProviderValidationCheck } from '../libs/providers'
 import { getDefaultKokoroModel, KOKORO_MODELS, kokoroModelsToModelInfo } from '../workers/kokoro/constants'
 import { SUPERTONIC_VOICES } from '../workers/supertonic/constants'
@@ -227,32 +226,6 @@ export interface ProviderRuntimeState {
   models: ModelInfo[]
   isLoadingModels: boolean
   modelLoadError: string | null
-}
-
-// Module-level singleton — the provider owns the Worker instance.
-// Follows the same pattern as `getKokoroAdapter` in the kokoro provider.
-let whisperProvider: LoadableTranscriptionProvider<any, string, any> | null = null
-
-// Tracks which model was last successfully loaded so listModels can skip redundant loads.
-// Mirrors the `lastLoadedModelId` closure used in kokoro-local's listVoices.
-let whisperLastLoadedModelId: string | null = null
-
-function getWhisperProvider(): LoadableTranscriptionProvider<any, string, any> {
-  if (!whisperProvider) {
-    whisperProvider = createWhisperTranscriptionProvider({
-      worker: new Worker(
-        new URL('../workers/whisper/worker.ts', import.meta.url),
-        { type: 'module' },
-      ),
-      // NOTICE: A dummy baseURL is required because @xsai/shared's requestURL()
-      // calls baseURL.toString() unconditionally before the custom fetch override
-      // can intercept the request. The actual network call never happens — the
-      // provider's fetch function processes audio entirely in the Web Worker.
-      // See: node_modules/@xsai/shared/dist/index.js requestURL()
-      baseURL: 'http://whisper-local/v1/',
-    })
-  }
-  return whisperProvider
 }
 
 export const useProvidersStore = defineStore('providers', () => {
@@ -460,15 +433,7 @@ export const useProvidersStore = defineStore('providers', () => {
         listModels: async (config) => {
           try {
             const modelId = (config.model as string | undefined) || DEFAULT_WHISPER_MODEL
-            if (modelId !== whisperLastLoadedModelId) {
-              await getWhisperProvider().loadTranscribe(modelId, {
-                // NOTICE: The worker auto-detects WebGPU via gpuu; passing 'webgpu' here
-                // lets transformers.js respect that, and it falls back to wasm automatically
-                // when WebGPU is unavailable.
-                device: 'webgpu' as any,
-              })
-              whisperLastLoadedModelId = modelId
-            }
+            await loadWhisperModel(modelId)
           }
           catch (error) {
             console.error('[browser-local-audio-transcription] Failed to auto-load model in listModels:', error)
@@ -479,17 +444,7 @@ export const useProvidersStore = defineStore('providers', () => {
 
         loadModel: async (config, hooks) => {
           const modelId = (config.model as string | undefined) || DEFAULT_WHISPER_MODEL
-          const provider = getWhisperProvider()
-          await provider.loadTranscribe(modelId, {
-            // NOTICE: The worker auto-detects WebGPU via gpuu; passing 'webgpu' here
-            // lets transformers.js respect that, and it falls back to wasm automatically
-            // when WebGPU is unavailable.
-            device: 'webgpu' as any,
-            onProgress: hooks?.onProgress,
-          })
-          // Keep the last-loaded tracker in sync so listModels skips the reload
-          // after the user explicitly loads a new model from the settings page.
-          whisperLastLoadedModelId = modelId
+          await loadWhisperModel(modelId, { onProgress: hooks?.onProgress })
         },
 
         // Convert browser-recorded audio (Float32 PCM / ~48 kHz) to PCM16 / 16 kHz
